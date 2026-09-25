@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 
+const Household = require("../models/Household");
 const User = require("../models/User");
 const Category = require("../models/Category");
 const Supplier = require("../models/Supplier");
@@ -76,8 +77,10 @@ const SUPPLIER_DATA = [
 async function seedDemoData({ reset = false, log = console.log } = {}) {
   if (reset) {
     log("Clearing existing data...");
+
     await Promise.all([
       User.deleteMany({}),
+      Household.deleteMany({}),
       Category.deleteMany({}),
       Supplier.deleteMany({}),
       Location.deleteMany({}),
@@ -86,31 +89,117 @@ async function seedDemoData({ reset = false, log = console.log } = {}) {
     ]);
   }
 
+
+    // ---------- Demo Household ----------
+  const demoAdminEmail = "admin@household.local";
+
+  let demoAdmin = await User.findOne({
+    email: demoAdminEmail,
+  });
+
+  let demoHousehold = await Household.findOne({
+    name: "Demo Household",
+  });
+
+  if (!demoHousehold) {
+    demoHousehold = await Household.create({
+      name: "Demo Household",
+      createdBy: demoAdmin?._id,
+    });
+  }
+
   // ---------- Users ----------
   const passwordHash = await bcrypt.hash("password123", 10);
-  const demoUsers = [];
-  for (const u of DEMO_USERS) {
-    demoUsers.push(await findOrCreate(User, { email: u.email }, { ...u, passwordHash }));
+const demoUsers = [];
+
+for (const u of DEMO_USERS) {
+  let user = await User.findOne({
+    email: u.email,
+  });
+
+  if (!user) {
+    user = await User.create({
+      ...u,
+      passwordHash,
+      householdId: demoHousehold._id,
+    });
+  } else if (!user.householdId) {
+    user.householdId = demoHousehold._id;
+    await user.save();
   }
+
+  demoUsers.push(user);
+}
   // Attribute history to everyone in the household (demo + real accounts)
-  const allUsers = await User.find();
-  const users = allUsers.length ? allUsers : demoUsers;
+  const users = demoUsers;
 
   // ---------- Categories / Locations / Suppliers ----------
+  // ---------- Categories / Locations / Suppliers ----------
   const categories = {};
-  for (const name of CATEGORY_NAMES) categories[name] = await findOrCreate(Category, { name });
 
+  for (const name of CATEGORY_NAMES) {
+    categories[name] = await findOrCreate(
+      Category,
+      {
+        householdId: demoHousehold._id,
+        name,
+      },
+      {
+        householdId: demoHousehold._id,
+        name,
+      }
+    );
+  }
+  
   const locations = {};
-  for (const name of LOCATION_NAMES) locations[name] = await findOrCreate(Location, { name });
+
+  for (const name of LOCATION_NAMES) {
+    locations[name] = await findOrCreate(
+      Location,
+      {
+        householdId: demoHousehold._id,
+        name,
+      },
+      {
+        householdId: demoHousehold._id,
+        name,
+      }
+    );
+  }
 
   const suppliers = [];
-  for (const s of SUPPLIER_DATA) suppliers.push(await findOrCreate(Supplier, { name: s.name }, s));
+
+  for (const s of SUPPLIER_DATA) {
+    suppliers.push(
+      await findOrCreate(
+        Supplier,
+        {
+          householdId: demoHousehold._id,
+          name: s.name,
+        },
+        {
+          ...s,
+          householdId: demoHousehold._id,
+        }
+      )
+    );
+  }
   const [KIRANA, DMART, RELIANCE, BIGBASKET, BLINKIT, ZEPTO, APOLLO] = suppliers;
 
-  const existingItems = await Item.countDocuments();
+  const existingItems = await Item.countDocuments({
+    householdId: demoHousehold._id,
+  });
+
   if (existingItems > 0) {
-    log(`Inventory already has ${existingItems} items — reference data checked, no sample items added.`);
-    return { seededItems: false, items: existingItems, transactions: 0 };
+    log(
+      `Demo household already has ${existingItems} items — reference data checked, no sample items added.`
+    );
+
+    return {
+      seededItems: false,
+      items: existingItems,
+      transactions: 0,
+    };
   }
 
   // ---------- Item templates ----------
@@ -242,6 +331,7 @@ async function seedDemoData({ reset = false, log = console.log } = {}) {
     }
 
     const item = await Item.create({
+      householdId: demoHousehold._id,
       name: tpl.name,
       brand: tpl.brand,
       categoryId: categories[tpl.category]._id,
@@ -254,6 +344,7 @@ async function seedDemoData({ reset = false, log = console.log } = {}) {
 
     for (const b of item.batches) {
       purchaseTxns.push({
+        householdId: demoHousehold._id,
         type: "PURCHASE",
         itemId: item._id,
         batchNumber: b.batchNumber,
@@ -299,6 +390,7 @@ async function seedDemoData({ reset = false, log = console.log } = {}) {
 
         const eventTime = purchaseTime + Math.random() * span;
         consumptionTxns.push({
+          householdId: demoHousehold._id,
           type: "CONSUMPTION",
           itemId: item._id,
           batchNumber: b.batchNumber,
@@ -321,6 +413,7 @@ async function seedDemoData({ reset = false, log = console.log } = {}) {
     const item = pick(FAST_MOVERS.length ? FAST_MOVERS : createdItems);
     const qty = randomFloat(0.2, 1.5);
     consumptionTxns.push({
+      householdId: demoHousehold._id,
       type: "CONSUMPTION",
       itemId: item._id,
       batchNumber: item.batches[0]?.batchNumber || "N/A",

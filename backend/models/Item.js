@@ -27,6 +27,11 @@ const batchSchema = new Schema({
 
 const itemSchema = new Schema(
   {
+    householdId: {
+      type: Schema.Types.ObjectId,
+      ref: "Household",
+      required: true,
+    },
     name: { type: String, required: [true, "Item name is required"], trim: true },
     brand: { type: String, trim: true },
     categoryId: { type: Schema.Types.ObjectId, ref: "Category", required: true },

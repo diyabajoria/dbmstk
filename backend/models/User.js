@@ -13,6 +13,12 @@ const userSchema = new mongoose.Schema(
     },
     passwordHash: { type: String, required: true },
     role: { type: String, enum: ["ADMIN", "MEMBER"], default: "MEMBER" },
+
+    householdId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Household",
+      required: true,
+    },
   },
   { timestamps: true }
 );
