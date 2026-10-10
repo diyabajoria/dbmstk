@@ -20,8 +20,13 @@ const { runAlertScan } = require("./services/alertService");
 const setupRoutes = require("./routes/setupRoutes");
 
 const app = express();
+const isVercel = Boolean(process.env.VERCEL);
 
-app.use(cors());
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map((origin) => origin.trim())
+  : true;
+
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
@@ -44,14 +49,13 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 
 connectDB().then(async () => {
-  // Sample data is already stored in the Demo Household.
-  // Do not automatically seed on every backend startup because
-  // newly registered households must remain empty.
+  // Vercel invokes the exported Express app as a serverless function. The
+  // listener and in-memory scheduler belong only to the long-running local
+  // server; alerts can still be refreshed through POST /api/alerts/scan.
+  if (isVercel) return;
 
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-  // Alert scan: run once on boot, then every 24h. Also exposed manually via
-  // POST /api/alerts/scan for on-demand refresh from the dashboard.
   runAlertScan().catch((err) =>
     console.error("Initial alert scan failed:", err.message)
   );
