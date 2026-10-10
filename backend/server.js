@@ -29,6 +29,17 @@ const allowedOrigins = process.env.CORS_ORIGIN
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
+// A serverless invocation must wait for MongoDB before any route touches a
+// model. Locally this reuses the connection opened before app.listen().
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
 app.use("/api/auth", authRoutes);
@@ -48,23 +59,27 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-connectDB().then(async () => {
-  // Vercel invokes the exported Express app as a serverless function. The
-  // listener and in-memory scheduler belong only to the long-running local
-  // server; alerts can still be refreshed through POST /api/alerts/scan.
-  if (isVercel) return;
+// Vercel invokes the exported Express app as a serverless function. The
+// listener and in-memory scheduler belong only to the long-running local
+// server; alerts can still be refreshed through POST /api/alerts/scan.
+if (!isVercel) {
+  connectDB().then(async () => {
 
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-  runAlertScan().catch((err) =>
-    console.error("Initial alert scan failed:", err.message)
-  );
-
-  setInterval(() => {
     runAlertScan().catch((err) =>
-      console.error("Scheduled alert scan failed:", err.message)
+      console.error("Initial alert scan failed:", err.message)
     );
-  }, 24 * 60 * 60 * 1000);
-});
+
+    setInterval(() => {
+      runAlertScan().catch((err) =>
+        console.error("Scheduled alert scan failed:", err.message)
+      );
+    }, 24 * 60 * 60 * 1000);
+  }).catch((err) => {
+    console.error("Failed to connect to MongoDB:", err.message);
+    process.exit(1);
+  });
+}
 
 module.exports = app;
